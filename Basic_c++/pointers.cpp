@@ -43,6 +43,18 @@ int main()
 
   cout << endl;
 
+  int *np1 = &a;
+  const int *np2 = &a;
+  int  *const np3 = &a; 
+  const int *const np4 =&a;  // also writes as int const *const np4
+
+  *(np1) = 10;
+  //*(np2) = 10;  //invalid
+  *(np3) = 10; 
+  //int b(0); np3 = &b; //inlvalid
+
+
+
   return 0;
 
 }
