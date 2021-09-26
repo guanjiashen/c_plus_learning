@@ -3,7 +3,7 @@
 
 using namespace std;
 
-void Aa( char *po )        //translation between low case letter and large case letter
+void Aa( char *p o )        //translation between low case letter and large case letter
 {
   for(int i=0; i< sizeof(po) ; i++)
   { 
@@ -52,9 +52,15 @@ int main()
   //*(np2) = 10;  //invalid
   *(np3) = 10; 
   //int b(0); np3 = &b; //inlvalid
+  
+  string nstr="test";
+  string *np;
+ // np = &nstr;
+  np =new string(nstr);  //np =new string; np= &nstr;
 
+  cout<< *np << endl;
 
-
+  delete p;
   return 0;
 
 }
