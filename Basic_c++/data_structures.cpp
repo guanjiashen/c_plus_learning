@@ -10,6 +10,10 @@ struct fruit
   double price;
 };
 
+void double_price (fruit* po)
+{
+  po->price=2 * (po->price);
+}
 
 
 int main()
@@ -21,6 +25,10 @@ int main()
   fruit *p = &fr1;
  
   cout << "the price of " << fr1.name << " is " << p->price << endl;
+
+  double_price(&fr1);
+
+  cout << "now the price of " << fr1.name << " is " << p->price << endl;
 
   return 0;
 }
