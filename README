@@ -1,0 +1,571 @@
+===============================================================================
+* Copyright (c) 2012-2018 
+* Author: Dr. Ju Liu, email: liujuy@gmail.com
+* All Rights Reserved 
+* This code is developed by Ju Liu during his Ph.D study at ICES, UT-Austin.
+  The goal is to provide a unified framework for parallel FEM/IGA implementation
+  of various multi-physics problems.
+===============================================================================
+
+-------------------------------------------------------------------------------
+                   Library Compile notes
+-------------------------------------------------------------------------------
+
+To compile the PERIGEE libraries, the users should install PETSc-3.x.x, VTK-6.1, 
+METIS, and HDF5.
+
+
+0. Install MPICH
+   tar -zxvf mpich-3.2.tar.gz
+   mv mpich-3.2 mpich-3.2-source
+   ./configure --prefix=/home/<USERNAME>/mpich-install 2>&1 | tee c.txt
+   make 2>&1 | tee m.txt
+   make install 2>&1 | tee mi.txt
+   
+   edit ~/.bashrc
+   PATH=/home/<USERNAME>/mpich-install/bin:$PATH
+
+   Now test by doing:
+       which mpicc
+       which mpiexec
+   to see if the system can locate the mpi compiler and the mpi job runner.
+
+1. Install PETSc
+   tar -zxvf petsc-3.x.x.tar.gz
+   cd petsc-3.x.x
+   ./configure PETSC_ARCH=[architecture type]
+               --download-openmpi (recommended for Mac OS) 
+               --download-mpich
+               --download-metis 
+               --download-hdf5 
+               --download-parmetis (optional)
+               --download-hypre (optional)
+               --with-debugging=yes/no
+   In TACC, the following optimization flags are used: 
+   --CFLAGS="-xhost -O2" --FFLAGS="-xhost -O2" --CXXFLAGS="-xhost -O2"
+   
+   On PETSc webpage, the following optimization flags are suggestd:
+   COPTFLAGS='-O3 -march=native -mtune=native' CXXOPTFLAGS='-O3 -march=native
+   -mtune=native' FOPTFLAGS='-O3 -march=native -mtune=native' --download-mpich   
+ 
+   Follow the instructions from the configuration results and do   
+   make
+   make install
+   
+   Note: if PETSc is installed with metis and hdf5, one can ignore the step 3 &
+         4 in the following compiling guide.
+
+2. Install VTK-6.1
+   tar -zxvf vtk-6.1.0.tar.gz
+   mv vtk-6.1.0 vtk-source
+   mkdir vtkbuild
+   cd vtkbuild
+   cmake ../vtk-source
+   vi CMakeCache.txt
+      CMAKE_INSTALL_PREFIX = (library location)
+      BUILD_SHARED_LIBS:BOOL=ON (build shared libraries)
+   cmake ../vtk-source
+   make
+   make install    
+
+   Note: In the default Ubuntu system, there are several packages not 
+         included, but is required by VTK. To build VTK, one needs OpenGL, 
+         X11, and Python. Users should install these libs by 
+                    sudo apt-get install command.
+         For example, to install OpenGL, development package, do
+                    sudo apt-get install mesa-common-dev
+         to install X11, do
+                    sudo apt-get install libxt-dev 
+
+3. Install METIS
+   tar metis-x.x.x.tar.gz
+   cd metis-x.x.x
+   edit include/metis.h IDXTYPEWIDTH (see Install.txt)
+   run make config prefix=... cc=... shared=0/1 (See BUILD.txt)
+   make
+   make install
+
+4. HDF5
+   tar hdf5-x.y.z.tar.gz
+   cd hdf5-x.y.z
+   ./configure --prefix=... --enable-cxx
+   make 
+   make check
+   make install
+   make check-install
+
+5. SLEPc
+   tar slepc-x.y.z.tar.gz
+   cd slepc-x.y.z-src (make sure the x.y.z is compatible with the PETSc version.)
+   export PETSC_DIR= (SLEPc depends on PETSc, so give the proper PETSc directory
+   you want to have the SLEPc depend on. Be careful the debug PETSc and the opt
+   PETSc)
+   ./configure --prefix=....
+   make
+   make install   
+
+6. (optional) Paraview
+
+7. Misc.
+7.0 Sometimes, one may need to get the newest CMAKE. Run
+    ./bootstrap --prefix=<install_prefix>
+    make -j6
+    make install
+    to have CMAKE installed in the prescribed location.
+
+7.1 In CMake files, one may do 
+                 SET(CMAKE_CXX_FLAGS "-pg -Wall")
+   to get prof profiling results.
+   
+7.2 When running CMake, use
+      cmake -DCMAKE_BUILD_TYPE=Debug/Release
+    can quickly set the variable CMAKE_BUILD_TYPE in the cmake file.
+    
+    CMake_BUILD_TYPE=Release will set compiler options to be -O3 -DNDEBUG
+    so that the assert function will be automatically turned off.
+ 
+    To view the actual compiler/liner options, run make VERBOSE=1, or
+    do SET( CMAKE_VERBOSE_MAKEFILE on )   
+
+7.3 make VERBOSE=1 will print the linking compiling details.
+
+-------------------------------------------------------------------------------
+Library Note:
+1. The four libraries' name and path should be specified in a .cmake 
+   configuration file. For a sample .cmake configuration file, see 
+   /conf/banach_PETSc_VTK.cmake. The library path configuration file should
+   specify the following variables:
+   (A) VTK:
+       VTK_DIR, e.g. /org/groups/hughes/opt/mac/VTK-5.6.1
+       VTK_VERSION, e.g. vtk-5.6
+       VTK_link_lib, e.g. vtkCommon vtkIO
+   (B) PETSc:
+       PETSC_DIR
+       PETSC_ARCH
+       PETSC_LIBRARY_DIRS
+       PETSC_link_lib
+   (C) METIS: 
+       METIS_DIR
+   (D) HDF5:
+       HDF5_DIR
+
+2. To obtain the full library for PETSc, run
+       -> cd ${PETSC_DIR}
+       -> make getlinklibs 
+   Copy the screen result into .cmake accordingly.
+
+2. If the libraries are built as dynamic libaries, one should make sure that 
+the system environmental variables 
+           LD_LIBRARY_PATH & DYLD_FALLBACK_LIBRARY_PATH
+are set such that the code can find the path to these dynamic libraries in run
+time.
+
+3. If the METIS is configured with IDXTYPEWIDTH=64, the hdf5 writer & reader 
+should be called for the 64-byte integer accordinglly. Otherwise, there will 
+be an error in data transfer.
+
+-------------------------------------------------------------------------------
+Build an out-of-source folder for the project. One should run in terminal as: 
+
+-> cmake ~/IsoPETSc3D/trunk/examples/your-project-name/
+
+-> make -j[num-of-cpus-for-make]
+
+If compiled successfully, the preprocessor, analysis driver, postpreprocessor, 
+postprocessor, and other drivers specified in the CMakeLists.txt in the 
+project folder will be built. 
+
+-------------------------------------------------------------------------------
+                   PERIGEE Programming Standard
+-------------------------------------------------------------------------------
+1.  Don't try to optimize the code too early. Wait, Watch, and Decide which part
+    is the bottleneck using profiling tools.
+2.  Use const whenever the variable does not change value. This includes the use 
+    of the const pointer ( * const ) and const_iterator.
+3.  Write inline function when the body of the function can be written within 
+    a few (less than five) lines.
+4.  Pass small data types as function parameter rather than a big class. 
+5.  Use STL if possible.
+6.  Avoid expensive operations, such as division, power operation, etc.
+7.  Move loop invariant variable out of loops.
+8.  To free the memory allocated by a pointer, call delete and set the pointer
+    value to NULL.
+9.  To declare an inline function, put the inline keyword with the body of the
+    function, instead of the header declaration of the funciton.
+
+--- More Styling of Coding
+10. 0 and nullptr/NULL 
+    Use 0 for intergers, 0.0 for reals, nullptr(C++11) or NULL(C++ 03) for 
+    pointers, and '\0' for chars.
+11. Interger types 
+    Typically C++ does not specify the sizes of its integer types. People assume 
+    that short is 16 bits, int is 32 bits, long is 32 bits and long long is 64 
+    bits. Use <cstdint> if one wants to use precise-width integer type. For
+    example, use int64_t for integer greater than 2^31.
+12. Unsigned integers
+    We follow the Google coding style and avoid using unsigned integers. Using
+    unsigned integers may help avoid errors when comparing signed with unsigned.
+
+-------------------------------------------------------------------------------
+                   Model implementation notes
+-------------------------------------------------------------------------------
+To add new models / new methods to the project, the users should do the 
+following:
+1. Implement the residual, tangent, mass assembly routines in /src/Model/ to 
+   define the problem's finite element formulation. These routines should be 
+   added as a derived class of IPLocAssem.
+2. Implement the solution class of this prolem, in particular the initial 
+   solution as a derived class of PDNSolution in /src/Solution/
+3. Choose appropriate boundary conditions for the problem. If necessary, the 
+   user should program his own boundary condition inside the BoundaryCond class.
+4. Choose appropriate nonlinear solver and time solver. If necessary, the user 
+   is responsible for programming his own nonlinear/time solver.
+5. Specify the data you want to visualize in VisDataPrep_* class, which should 
+   be a derived class of IVisDataPrep.
+6. Create a new project in trunk/examples/ folder to hold the problem's 
+   preprocessor, analysis, postpreprocessor, postprocess driver, and CMakeLists.
+6. Write a preprocess driver for this problem in the project folder. Note: 
+   make sure the dof and boundary condition for this problem are correct.
+7. Write an analysis driver for the finite element analysis part. Note, choose 
+   proper element type for this problem.
+8. Write a visualization driver for the problem. If necessary the user will 
+   have to write other postprocess routines for special purpose. If the post-
+   processing involves the use of material models, the user is responsible to
+   choose the correct material model for visualization calculations.
+
+
+-------------------------------------------------------------------------------
+                   Function explanation notes
+-------------------------------------------------------------------------------
+1. Preprocessor
+1.1 Global mesh numbering starts from 0. Every element and every vertex have a
+    nonnegative element / nodal index.
+    The global element index ee's range is 0 <= ee < nElem;
+    The global vertex/basis function index ii's range is 0 <= ii < nFunc.
+
+
+1.2 Boundary condition.
+    Boundary conditions for 2D and 3D are set in the BoundaryCond2D.xpp and 
+    BoundaryCond.xpp files. In principle we set strong imposed boundary 
+    conditions for nodes, and we set weak imposed boundary element face(3D) or
+    edge(2D) in these files. For nodal boundary conditions, the Dirichlet and 
+    master-slave type boundary conditions are specified in the files.
+
+
+1.3 3D Boundary nodes ordering
+
+         4 ____________________ 6
+        /|                     /|
+       / |                    / |
+      /  |                   /  |         u
+     /   |                  /   |         ^
+    5______________________7    |         |
+    |    |                |     |         |
+    |    |                |     |         |
+    |    |0 --------------|---- | 2       -------> t
+    |    /                |    /         /
+    |   /                 |   /         /
+    |  /                  |  /        |/_
+    | /                   | /         s
+    |/____________________|/
+    1                     3
+
+
+    (s,t,u)-coordinate 
+    
+    0-1-3-2 : bottom
+    4-5-7-6 : top
+    0-1-5-4 : left
+    2-3-7-6 : right
+    1-3-7-5 : front
+    0-2-6-4 : back
+
+
+1.4 2D Boundary element ordering (old)
+    
+               top 
+       ---------------------
+       |                   |
+     l |                   | r
+     e |                   | i
+     f |                   | g
+     t |                   | h     t
+       |                   | t     ^
+       |                   |       |
+       |                   |       |
+       ---------------------     0 ------> s
+              bottom
+
+
+    2D Boundary element ordering (new, consistent with 3D ordering)   
+ 
+              right
+       ---------------------
+       |                   |
+     b |                   | f
+     a |                   | r
+     c |                   | o
+     k |                   | n     t
+       |                   | t     ^
+       |                   |       |
+       |                   |       |
+       ---------------------     0 ------> s
+              left
+
+
+1.5 Boundary information specification in preprocessors.
+    INodalBC provides an interface for the access of
+      -- dir_nodes, num_dir_nodes, 
+      -- per_slave_nodes, per_master_nodes, num_per_nodes, 
+      -- ID array.
+    
+    IElemBC provides an interface for the access of
+      -- num_front_elem, front_elem
+      -- num_back_elem,  back_elem
+      -- num_left_elem,  left_elem
+      -- num_right_elem, right_elem
+      -- num_top_elem,   top_elem
+      -- num_bottom_elem bottom_elem 
+
+    ElemBC provides an interface for the access of
+      -- num_ebc: the number of regions that need boundary elemental integral
+      -- num_node[ii]: for 0 <= ii < num_ebc, gives the number of nodes that
+                       defines this surface region.
+      -- num_cell[ii]: for 0 <= ii < num_ebc gives the number of cells that
+                       discretize this surface region.
+      -- cell_nLocBas[ii]: for 0 <= ii < num_ebc gives the surface cell
+                           number of local nodes. It is 3 for triangles, 
+                           4 for quadralaterials, etc.
+      -- pt_xyz[ii]: for 0<=ii < num_ebc gives a vector with length
+                     3 x num_node[ii]. This vector stores the phyiscal
+                     coordinates of the nodes.
+      -- ien[ii]: for 0 <= ii < num_ebc gives a vector with length
+                  cell_nLocBas[ii] x num_cell[ii]. This vector stores the cell
+                  IEN array with respect to the list of nodes with indices
+                  runnning from 0 to num_node[ii]-1
+      -- global_node[ii]: for 0<=ii<num_ebc gives a vector with length 
+                          num_node[ii], gives the global volumetric mesh's 
+                          indices for the local nodes
+      -- global_cell[ii]: for 0<=ii<num_ebc gives a vector with length
+                          num_cell[ii], gives the cell's corresponding
+                          volumetric element's index
+    The above information is enough for one to perform numerical integration
+    over a surface.
+
+
+1.6 Tetrahedral element and its triangle surface element ordering
+    
+                     u
+                     ^
+                     |
+                     3
+                     |
+                     | 
+                     | 
+                     |
+                     |
+                     |
+                     |
+                    /0------------------2-------> s
+                   /
+                  /
+                 /
+                / 
+               / 
+              1
+             /
+            *
+           r
+
+    Node 0 [0.0, 0.0, 0.0]     Node 1 [1.0, 0.0, 0.0]
+    Node 2 [0.0, 1.0, 0.0]     Node 3 [0.0, 0.0, 1.0]
+
+                     u
+                     ^
+                     |
+                     3
+                    /| -
+                     |   -
+                  /  |     -
+                     7        8
+                /    |           -
+                9    |             -
+                     |                - 
+               /    /0--------6---------2-------> s
+              /    /                -
+              /   /              -
+                 4           -   
+             /  /        5    
+             / /     -
+              /  - 
+             1
+            /
+           *
+           r
+
+    Node 0 [0.0, 0.0, 0.0]     Node 1 [1.0, 0.0, 0.0]
+    Node 2 [0.0, 1.0, 0.0]     Node 3 [0.0, 0.0, 1.0]
+    Node 4 [0.5, 0.0, 0.0]     Node 5 [0.5, 0.5, 0.0]
+    Node 6 [0.0, 0.5, 0.0]     Node 7 [0.0, 0.0, 0.5]
+    Node 8 [0.0, 0.5, 0.5]     Node 9 [0.5, 0.0, 0.5]
+
+    *
+    |
+    2
+    | -
+    |   -
+    |     -
+    |       -
+    |         -
+    |           -
+    0-------------1-------->
+
+    Node 0 [0.0, 0.0]  Node 1 [1.0, 0.0]  Node 2 [0.0, 1.0]
+
+    Tet-Face-0 : Node 1 2 3
+    Tet-Face-1 : Node 0 3 2
+    Tet-Face-2 : Node 0 1 3
+    Tet-Face-3 : Node 0 2 1
+    
+
+    *
+    |
+    2
+    | -
+    |   -
+    |     -
+    5       4
+    |         -
+    |           -
+    |             -
+    0-------3-------1-------->
+    
+    Node 0 [0.0, 0.0]  Node 1 [1.0, 0.0]  Node 2 [0.0, 1.0]
+    Node 3 [0.5, 0.0]  Node 4 [0.5, 0.5]  Node 5 [0.0, 0.5]
+
+    In the above ordering, the triangle 01 edge x 02 edge gives the outward
+    normal direction. For example, on Tet-Face-0, vector 12 cross vector 13
+    points in the outward normal direction of the face.
+    
+-------------------------------------------------------------------------------
+2. Analysis code
+-------------------------------------------------------------------------------
+2.A Element routine
+   Existing element routine:
+   type 2xx: 2D B-splines and NURBS element
+   type 201: 2D H1 conforming NURBS element with 1st order derivatives
+   type 202  2D H1 conforming NURBS element with 2nd order derivatives
+   type 203: 2D H1 conforming NURBS element with NO derivatives
+   type 204: 2D H1 conforming NURBS element with 1st order and ,xx ,yy
+             ,i.e., laplacian, derivatives.
+
+   type 3xx: 3D B-splines and NURBS element
+   type 300: 3D H1 conforming NURBS element with 2nd order derivatives.
+   type 301: 3D H1 conforming NURBS element with 2nd order derivatives
+             and the inverse of jacobian, e.g., ds_dx, ..., du_dz.
+             This is used to calcualte the stabilization parameter
+             in the variational multiscale methods (VMS).
+   type 302: 3D H1 conforming NURBS element with 1st order derivatives 
+             and ,xx ,yy ,zz derivatives (i.e. Laplacian).
+   type 303: 3D H1 conforming NURBS element with 1st order derivatives
+             and ,xx ,yy ,zz derivatives (i.e. Laplacian), and the 
+             inverse of the Jacobian, i.e., ds_dx, ..., du_dz. These
+             quantities are used for calculating the stabilization
+             parameters in the variational multiscale methods (VMS).
+   type 304: 3D H1 conforming NURBS element with only 1st order
+             derivatives.
+   type 305: 3D H1 conforming NURBS element with NO derivatives.
+
+   type 4xx: T-splines
+   type 420: 2D T-spline with no derivative
+   type 421: 2D T-spline with 1st order derivative
+   type 423: 2D T-spline with 1st order derivative and Laplacian
+
+   type 5xx: Simplicial elements
+   type 510: 1D Lagrange element, P1, with no derivative
+   type 511: 1D Lagrange element, P2, with no derivative
+   type 521: 2D Linear Triangle element for 3D natural boundary integration. 
+   type 531: 3D Linear Tetrahedron element. 3 => 3D, 1=>linear element
+   type 532: 3D Quadratic Tetrahedron element. 3 => 3D, 2=>quadratic element
+   type 551: 2D Linear Triangle element
+   type 552: 2D Quadratic Triangle element
+   type 561: 2D Linear Triangle with cubic bubble
+   type 562: 2D Quadratic Triangle with quartic bubbles
+   type 571: 3D Linear Tetradedron with quartic bubble
+   type 572: 3D P2-P1 Taylor-Hood Tetradedron
+
+-------------------------------------------------------------------------------
+3. Model
+-------------------------------------------------------------------------------
+The following Parallel-Local-Assembly code are most often used.
+A. Thermal Navier-Stokes-Korteweg model
+1. PLocAssem_TNSK_2D_Stable : 
+   two-dimensional TNSK model using no-cached programming style. kappa and mu 
+   are constant.
+
+2. PLocAssen_TNSK_2D_RB : 
+   two-dimensional TNSK model using no-cached programming style. kappa = ck rho, 
+   mu = cmu rho. This is used for boiling simulations.
+
+3. PLocAssem_TNSK_2D_pertMid :
+   two dimensional NSK assembly using my provably stable scheme. Quadrature
+   needs to be precaculated.
+
+4. PLocAssem_TNSK_2D_kappa_dep_rho_pertMid :
+   This is adopted from A.3, except that the kappa now is c_k rho. 
+
+5. PLocAssem_TNSK_2D_kappa_re_dep_rho_pertMid :
+   This is adopted from A.4, except that mu is made linearly dependent on
+   density. This is used as 2D boiling model in my dissertation.
+
+6. PLocAssem_TNSK_3D_pertMid :
+   Three-dimensional TNSK model, using pre-calculated quadrature rule. kappa and
+   mu are constants.
+
+7. PLocAssem_TNSK_3D_boiling_pertMid :
+   Three-dimensional TNSK model, using pre-calculated quadrature rule. kappa and
+   mu are linearly dependent on density. This is used as the 3D boiling code in
+   my dissertation.
+
+
+B. Incompressible Navier-Stokes model
+1. PLocAssem_NS_3D_VMS_GenAlpha_ExactJacobian : 
+   VMS and Generalized-alpha for NS equations in 3D. Jacobian is exact.
+
+2. PLocAssem_NS_3D_VMS_GenAlpha_ExactJacobian_noCache :
+   Same as B.1, except that the quadrature rule is not precached; it is built
+   inside the element assembly code.
+
+3. PLocAssem_NS_3D_VMS_GenAlpha_ExactJac_noCache_AdvForm :
+   Same as B.2, except that we use advective form rather than conservative form.
+
+4. PLocAssem_NS_3D_VMS_GenAlpha_InexactJacobian :
+   Same as 1, except that the Jacobian matrix adopts the inexact form given in
+   the 2007 VMS paper.
+
+
+C. Isothermal Navier-Stokes-Korteweg model
+1. PLocAssem_INSK_3D_GenAlpha :
+   Conservative spatial discretization and Generalized-alpha time integration.
+
+2. PLocAssem_SINSK_3D_pertMid :
+   My provably stable scheme.
+
+
+D. Nonlinear Heat Equation
+1. PLocAssem_NLHeat_2D_GenAlpha
+
+2. PLocAssem_NLHeat_3D_GenAlpha
+
+
+E. Nonlinear Finite Deformation Solid Model
+1. PLocAssem_Hyperelastic_3D_GenAlpha :
+   Finite deformation solid model with hyper-elastic material and Generalized-
+   alpha time integration. This routine supports: 
+   1.1 Generalized Neo-Hookean material given in Yuri Bazilevs, et al. Comp.
+       Mech. 2008 vol 43:3-37.
+-------------------------------------------------------------------------------
+     
+===============================================================================
+                   End of file
+===============================================================================
